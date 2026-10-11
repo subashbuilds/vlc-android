@@ -107,8 +107,16 @@ class VideoTracksDialog : VLCBottomSheetDialogFragment() {
                     // The external subtitle drawn by the screen-anchored overlay is not a libvlc
                     // track (the file is never attached as a slave): it is added here so the
                     // subtitle the user sees is the one shown as selected in the menu
-                    val displayedTracks = SubtitleOverlayRuntime.externalSubtitleLabel
-                            ?.let { trackList + OverlaySubtitleTrack(it) } ?: trackList
+                    val overlayEntry = SubtitleOverlayRuntime.externalSubtitleLabel?.let { OverlaySubtitleTrack(it) }
+                    val displayedTracks: Array<VlcTrack> = when {
+                        overlayEntry != null && trackList.none { it.getId() == overlayEntry.getId() } ->
+                            // Array<out VlcTrack> + VlcTrack — Array.plus(element) returns Array<T>
+                            (trackList + overlayEntry) as Array<VlcTrack>
+                        overlayEntry != null ->
+                            trackList as Array<VlcTrack>
+                        else ->
+                            trackList as Array<VlcTrack>
+                    }
                     val trackAdapter = TrackAdapter(generateTrackList(displayedTracks), displayedTracks.firstOrNull { it.getId() == playbackService.spuTrack }, getString(R.string.track_text))
                     trackAdapter.setOnTrackSelectedListener { track ->
                         trackSelectionListener.invoke(track.getId(), TrackType.SPU)
