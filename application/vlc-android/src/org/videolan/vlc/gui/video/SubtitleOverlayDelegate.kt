@@ -28,16 +28,22 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.resources.VLCInstance
 import org.videolan.tools.Settings
+import org.videolan.tools.SubtitlePosition
 import org.videolan.vlc.PlaybackService
 import org.videolan.vlc.R
+import org.videolan.vlc.getAllTracks
 import org.videolan.vlc.gui.dialogs.VideoTracksDialog
 import org.videolan.vlc.isVLC4
-import org.videolan.vlc.setSpuTrack
 import org.videolan.vlc.repository.SlaveRepository
+import org.videolan.vlc.setSpuTrack
+import org.videolan.vlc.subtitleoverlay.EmbeddedFormat
+import org.videolan.vlc.subtitleoverlay.EmbeddedSubtitles
 import org.videolan.vlc.subtitleoverlay.PlaybackTimeSource
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayController
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayPrefs
+import org.videolan.vlc.subtitleoverlay.SubtitleOverlayRuntime
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayView
 import java.io.File
 
@@ -51,15 +57,19 @@ import java.io.File
  *    z-orders above);
  *  - own the [SubtitleOverlayController] for the lifetime of the player session and forward the
  *    libvlc player events the activity already receives to it;
- *  - take the external SubRip subtitles of the played media over from VLC while the overlay is
- *    enabled: the file picked, downloaded or saved for the media is displayed by the overlay and is
- *    never attached to the media as a native slave (see [SubtitleOverlayPrefs.handles] and
- *    [org.videolan.vlc.media.PlayerController.setSlaves]), so it is never rendered twice;
+ *  - take the text subtitles of the played media over from VLC while the overlay is enabled: the
+ *    external SubRip file that was picked, downloaded or saved for the media, and the SubRip/WebVTT
+ *    tracks embedded in the container. An external file is never attached to the media as a native
+ *    slave (see [SubtitleOverlayPrefs.handles] and [org.videolan.vlc.media.PlayerController.setSlaves])
+ *    and an embedded track has its native rendering turned off right after the container was read,
+ *    so the same text is never drawn twice (see [SubtitleOverlayRuntime]);
+ *  - keep VLC's own subtitle *position* away from the formats that carry their own coordinates:
+ *    styled ASS/SSA and bitmap subtitles are never moved by the app-wide position setting
+ *    ([SubtitlePosition]), text subtitles are;
  *  - apply a settings change (enable, position) to the playback that is running instead of waiting
  *    for the player to be opened again.
  *
- * Every subtitle format the overlay cannot parse keeps going through VLC even when it is on, and
- * VLC's own rendering is only turned off while the overlay actually displays a subtitle.
+ * Every subtitle format the overlay cannot draw keeps going through VLC even when it is on.
  */
 class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         SharedPreferences.OnSharedPreferenceChangeListener {
@@ -85,9 +95,14 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
     private var requestedSubtitle: Uri? = null
     private var requestedForMedia: String? = null
 
-    /** Subtitle currently displayed by the overlay. */
-    private var activeSubtitle: Uri? = null
+    /** External subtitle currently drawn by the overlay. */
+    private var activeExternalSubtitle: Uri? = null
+
+    /** Id (as libvlc reports it) of the embedded track currently drawn by the overlay. */
+    private var activeEmbeddedTrackId: String? = null
+
     private var restoreJob: Job? = null
+    private var resolveJob: Job? = null
 
     /** Native subtitle track that was displayed before the overlay took the rendering over. */
     private var nativeSubtitleBeforeOverlay: String? = null
@@ -162,38 +177,41 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         loadSubtitle(uri)
     }
 
+    // ---- subtitle ownership ----
+
     /**
-     * Called by the activity when it is about to select the native subtitle track [trackId] while
-     * the overlay displays the media's external subtitle: the native track is kept off and
-     * remembered, so both renderers don't draw subtitles at the same time.
+     * Called by the player when it is about to select the subtitle track [trackId] by itself (media
+     * start, preferred or restored track).
+     *
+     * @return true when the overlay takes the rendering over and the track must NOT be selected in
+     *   VLC, false when VLC keeps it (the overlay may take an embedded track over afterwards, once
+     *   the container has been read).
      */
-    fun onNativeSubtitleAutoSelected(trackId: String) {
-        if (!rendersSubtitle) return
-        if (trackId != NO_NATIVE_SUBTITLE && trackId != NO_TRACK)
-            nativeSubtitleBeforeOverlay = nativeSubtitleBeforeOverlay ?: trackId
-        setNativeSubtitleTrack(NO_NATIVE_SUBTITLE)
+    fun onNativeSubtitleAboutToSelect(trackId: String): Boolean {
+        if (rendersSubtitle && activeExternalSubtitle != null) {
+            // The overlay draws the external subtitle of this media: VLC's own track stays off, and
+            // the track that was about to be restored is remembered so it can be given back
+            if (trackId != NO_NATIVE_SUBTITLE && trackId != NO_TRACK)
+                nativeSubtitleBeforeOverlay = nativeSubtitleBeforeOverlay ?: trackId
+            return true
+        }
+        return adoptSubtitleSelection(trackId, explicit = false)
     }
 
     /**
      * Called when the user selects a subtitle entry (or turns subtitles off) in the tracks panel:
-     * an explicit choice always wins over the overlay, so the overlay gives the rendering back to
-     * VLC and stops drawing the external subtitle.
+     * an explicit choice always wins over the overlay.
+     *
+     * @return true when the overlay keeps drawing the chosen entry, in which case VLC must not be
+     *   given the track (selecting it would draw the same text twice).
      */
-    fun onNativeSubtitleSelected(trackId: String) {
-        // The user is in control from now on: nothing has to be given back when the overlay stops
-        nativeSubtitleBeforeOverlay = null
-        requestedSubtitle = null
-        requestedForMedia = null
-        if (!rendersSubtitle) return
-        activeSubtitle = null
-        rendersSubtitle = false
-        controller?.unload()
-    }
+    fun onNativeSubtitleSelected(trackId: String): Boolean = adoptSubtitleSelection(trackId, explicit = true)
 
     /** Detach from the activity; release the view and controller. */
     fun release() {
         settings.unregisterOnSharedPreferenceChangeListener(this)
         restoreJob?.cancel()
+        resolveJob?.cancel()
         restoreNativeSubtitleRendering()
         detach()
     }
@@ -242,8 +260,8 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         controller = null
         overlayView?.let { (it.parent as? ViewGroup)?.removeView(it) }
         overlayView = null
-        activeSubtitle = null
-        rendersSubtitle = false
+        clearRenderingState()
+        SubtitleOverlayRuntime.clear()
     }
 
     /** Applies the overlay setting to the playback that is running. */
@@ -274,10 +292,17 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
             requestedForMedia = null
         }
         controller?.onMediaChanged()
-        activeSubtitle = null
-        rendersSubtitle = false
+        clearRenderingState()
+        SubtitleOverlayRuntime.clear()
         restoreNativeSubtitleRendering()
         restoreSubtitle()
+    }
+
+    /** Forgets what the overlay draws, without touching the controller or VLC's track. */
+    private fun clearRenderingState() {
+        activeExternalSubtitle = null
+        activeEmbeddedTrackId = null
+        rendersSubtitle = false
     }
 
     /**
@@ -311,10 +336,11 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
 
     /** Loads [uri] in the overlay, keeping VLC's rendering off while it is displayed. */
     private fun loadSubtitle(uri: Uri) {
-        if (!isEnabled || uri == activeSubtitle) return
+        if (!isEnabled || uri == activeExternalSubtitle) return
         // VLC must not draw the subtitle the overlay is about to display, and the activity must not
-        // select one behind it (see onNativeSubtitleAutoSelected)
-        activeSubtitle = uri
+        // select one behind it (see onNativeSubtitleAboutToSelect)
+        activeExternalSubtitle = uri
+        activeEmbeddedTrackId = null
         rendersSubtitle = true
         syncNativeSubtitleRendering()
         val c = attach() ?: return // no service yet: restored when it connects
@@ -323,18 +349,120 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
 
     private fun onSubtitleLoaded(uri: Uri, loaded: Boolean) {
         if (loaded) {
-            if (activeSubtitle != uri) activeSubtitle = uri
+            if (activeExternalSubtitle != uri) activeExternalSubtitle = uri
+            activeEmbeddedTrackId = null
             rendersSubtitle = true
             syncNativeSubtitleRendering()
             return
         }
         // Not readable as SubRip (deleted file, unsupported content...): hand the rendering back to
         // VLC, which keeps whatever subtitle it had
-        if (activeSubtitle == uri) activeSubtitle = null
-        if (activeSubtitle == null) {
+        if (activeExternalSubtitle == uri) activeExternalSubtitle = null
+        if (activeExternalSubtitle == null) {
             rendersSubtitle = false
             restoreNativeSubtitleRendering()
         }
+    }
+
+    /**
+     * Applies the subtitle choice of the user (or of the player) to the overlay: an explicit choice
+     * gives the rendering back to VLC, while a track the overlay can draw (an embedded SubRip or
+     * WebVTT track of the container) is taken over.
+     *
+     * The format of an embedded track is only known by the container, so it is read off the main
+     * thread; VLC renders the track until then, and for good when the container can't be read.
+     */
+    private fun adoptSubtitleSelection(trackId: String, explicit: Boolean): Boolean {
+        // The overlay's own entry of the subtitle menu: keep the overlay as the renderer
+        if (trackId == SubtitleOverlayRuntime.TRACK_ID)
+            return SubtitleOverlayRuntime.externalSubtitleLabel != null
+        // The embedded track the overlay already draws: nothing to change, VLC must not get it
+        if (activeEmbeddedTrackId != null && activeEmbeddedTrackId == trackId) {
+            syncNativeSubtitleRendering()
+            return true
+        }
+        if (explicit) {
+            // The user is in control from now on: nothing has to be given back when the overlay stops
+            nativeSubtitleBeforeOverlay = null
+            requestedSubtitle = null
+            requestedForMedia = null
+        }
+        // Any other choice belongs to VLC: the overlay stops drawing what it had
+        if (rendersSubtitle) {
+            clearRenderingState()
+            controller?.unload()
+        }
+        if (trackId == NO_NATIVE_SUBTITLE || trackId == NO_TRACK) return false
+
+        val service = activity.service
+        val index = service?.spuTracks?.indexOfFirst { it.getId() == trackId } ?: -1
+        val location = service?.currentMediaWrapper?.location
+        if (service == null || index < 0 || location == null) {
+            // Not an embedded track (or the media is gone): only libvlc's own description can tell
+            // what the format is
+            applySubtitleMargin(styled = SubtitlePosition.isStyledSubtitleDescription(descriptionOf(trackId)))
+            return false
+        }
+        val language = mediaTrackOf(trackId)?.language
+        val uri = toUri(location)
+        val c = if (isEnabled) attach() else null
+        resolveJob?.cancel()
+        if (c != null) {
+            // Single read of the container: it reports the format and, for a text one, loads the
+            // cues in the overlay (see onEmbeddedResolved)
+            c.loadEmbedded(uri, index, language, trackId) { format -> onEmbeddedResolved(trackId, format) }
+        } else {
+            resolveJob = activity.lifecycleScope.launch {
+                val format = withContext(Dispatchers.IO) {
+                    runCatching { EmbeddedSubtitles.formatOf(activity, uri, index, language) }.getOrNull()
+                }
+                if (activity.service?.currentMediaWrapper?.location != location) return@launch
+                applySubtitleMargin(styled = format?.let { !it.text }
+                        ?: SubtitlePosition.isStyledSubtitleDescription(descriptionOf(trackId)))
+            }
+        }
+        return false
+    }
+
+    /** Outcome of the container read of an embedded subtitle track (see [adoptSubtitleSelection]). */
+    private fun onEmbeddedResolved(trackId: String, format: EmbeddedFormat?) {
+        applySubtitleMargin(styled = format?.let { !it.text }
+                ?: SubtitlePosition.isStyledSubtitleDescription(descriptionOf(trackId)))
+        // The controller loaded the cues only when nothing newer took the rendering over in between
+        if (format != null && format.text && controller != null && activeExternalSubtitle == null) {
+            // The overlay loaded the cues of the track: VLC's own rendering is turned off, and the
+            // track stays the one the menu shows as selected
+            activeEmbeddedTrackId = trackId
+            activeExternalSubtitle = null
+            rendersSubtitle = true
+            syncNativeSubtitleRendering()
+        }
+    }
+
+    /**
+     * Keeps VLC's subtitle position in sync with the format of the rendered subtitle: styled
+     * (ASS/SSA) and bitmap subtitles are authored with their own coordinates and must not be moved,
+     * text subtitles follow the app-wide position setting.
+     *
+     * `--sub-margin` is read when the video output is created, so the change is applied by rebuilding
+     * the engine and replaying the current media where it is (see `PlaylistManager.reload`).
+     */
+    private fun applySubtitleMargin(styled: Boolean) {
+        if (!SubtitlePosition.setStyledSubtitleActive(activity, styled)) return
+        activity.lifecycleScope.launch {
+            withContext(Dispatchers.IO) { VLCInstance.restart() }
+            PlaybackService.instance?.reloadPlayback()
+        }
+    }
+
+    /** Description libvlc gives for the subtitle track [trackId] (empty when it is unknown). */
+    private fun descriptionOf(trackId: String): String =
+            activity.service?.spuTracks?.firstOrNull { it.getId() == trackId }?.getName() ?: ""
+
+    /** Media track [trackId], which carries the language and the codec libvlc reported for it. */
+    private fun mediaTrackOf(trackId: String): IMedia.Track? {
+        val media = activity.service?.mediaplayer?.media ?: return null
+        return runCatching { media.getAllTracks().firstOrNull { it.id.toString() == trackId } }.getOrNull()
     }
 
     /**

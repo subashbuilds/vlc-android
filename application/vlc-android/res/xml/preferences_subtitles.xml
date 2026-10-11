@@ -40,14 +40,14 @@
                 android:title="@string/subtitle_overlay_enabled_title"
                 app:singleLineTitle="false" />
         <SeekBarPreference
-                android:defaultValue="98"
+                android:defaultValue="0"
                 android:iconSpaceReserved="false"
                 android:key="subtitle_overlay_position"
                 android:max="100"
                 android:summary="@string/subtitle_overlay_position_summary"
                 android:title="@string/subtitle_overlay_position_title"
                 app:iconSpaceReserved="false"
-                app:min="5"
+                app:min="0"
                 app:seekBarIncrement="1"
                 app:showSeekBarValue="true"
                 app:updatesContinuously="true" />
@@ -62,18 +62,6 @@
                 android:summary="%s"
                 android:persistent="true"
                 android:title="@string/subtitles_size_title" />
-        <SeekBarPreference
-                android:defaultValue="0"
-                android:iconSpaceReserved="false"
-                android:key="subtitles_position"
-                android:max="500"
-                android:summary="@string/subtitles_position_summary"
-                android:title="@string/subtitles_position_title"
-                app:iconSpaceReserved="false"
-                app:min="0"
-                app:seekBarIncrement="1"
-                app:showSeekBarValue="true"
-                app:updatesContinuously="true" />
         <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="subtitles_bold"

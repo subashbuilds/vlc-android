@@ -1701,15 +1701,15 @@ open class VideoPlayerActivity : AppCompatActivity(), PlaybackService.Callback, 
                                     @Suppress("UNCHECKED_CAST")
                                     if ((tracks as Array<VlcTrack>).isNotEmpty()) service.setSpuTrack(tracks[tracks.size - 1].getId())
                                     addNextTrack = false
-                                } else if (subtitleOverlayDelegate.rendersSubtitle) {
-                                    // The overlay draws the external subtitle of this media: keeping
-                                    // VLC's rendering off is what prevents the same text from being
-                                    // drawn twice
-                                    withContext(Dispatchers.Main) {
-                                        subtitleOverlayDelegate.onNativeSubtitleAutoSelected(spuTrack)
-                                    }
                                 } else if (spuTrack != "0" || currentSpuTrack != "-2") {
-                                    service.setSpuTrack(spuTrack)
+                                    // The overlay may own this subtitle: it draws the media's
+                                    // external file, and takes an embedded text track over (keeping
+                                    // VLC's rendering off is what prevents the same text from being
+                                    // drawn twice)
+                                    withContext(Dispatchers.Main) {
+                                        if (!subtitleOverlayDelegate.onNativeSubtitleAboutToSelect(spuTrack))
+                                            service.setSpuTrack(spuTrack)
+                                    }
                                     lastSpuTrack = "-2"
                                 }
                             }
@@ -2191,12 +2191,11 @@ open class VideoPlayerActivity : AppCompatActivity(), PlaybackService.Callback, 
             lastAudioTrack = "-2"
         }
         if (lastSpuTrack >=" -1") {
-            // The overlay draws the external subtitle of this media: VLC's own subtitle track stays
-            // off, and the track that was about to be restored is remembered by the delegate, which
-            // gives it back when the overlay stops (see SubtitleOverlayDelegate.release)
-            if (subtitleOverlayDelegate.rendersSubtitle)
-                subtitleOverlayDelegate.onNativeSubtitleAutoSelected(lastSpuTrack)
-            else service?.setSpuTrack(lastSpuTrack)
+            // The overlay may own this subtitle: it draws the media's external file, and takes an
+            // embedded text track over. In both cases VLC's own track stays off (the track the
+            // overlay took from it is remembered and given back when the overlay stops)
+            if (!subtitleOverlayDelegate.onNativeSubtitleAboutToSelect(lastSpuTrack))
+                service?.setSpuTrack(lastSpuTrack)
             lastSpuTrack = "-2"
         }
     }

@@ -20,45 +20,33 @@ package org.videolan.vlc.subtitleoverlay
 import android.content.Context
 import android.net.Uri
 import org.videolan.tools.Settings
-import org.videolan.tools.putSingle
+import org.videolan.tools.SubtitlePosition
 import kotlin.math.roundToInt
 
 /**
- * Persistent preferences of the overlay: the enable state and the vertical anchor
- * of the text.
+ * Preferences of the overlay: the enable state and the vertical anchor of the text.
  *
- * The anchor is edited by a `SeekBarPreference` and therefore stored as a whole
- * percentage (5..100, see `preferences_subtitles.xml`). [position] normalizes it to
- * the 0.05..1.0 value the overlay works with, and keeps accepting an already
- * normalized float, so a value written under the same key by [SubtitleOverlayView]
- * is never read back as the wrong type (SharedPreferences.getFloat throws when the
- * stored value is an Int, and the other way around).
+ * The anchor is the app-wide subtitle position setting ([SubtitlePosition]), stored as a whole
+ * percentage in `preferences_subtitles.xml` and shared with VLC's native renderer: 0 is the
+ * bottom edge of the player screen, 100 the top. [position] normalizes it to the 0.0..1.0 value
+ * the overlay works with.
  */
 object SubtitleOverlayPrefs {
 
     /** Extension of the files the overlay's parser can read. */
     private const val SRT_EXTENSION = "srt"
 
-    /** Minimum anchor percentage the preferences seek bar allows. */
-    private const val MIN_POSITION_PERCENT = 5
-
-    /** Maximum anchor percentage the preferences seek bar allows. */
-    private const val MAX_POSITION_PERCENT = 100
-
     /** Whether the screen-anchored overlay is enabled. */
     fun isEnabled(context: Context): Boolean =
             Settings.getInstance(context)
                     .getBoolean(SubtitleOverlayController.PREF_OVERLAY_ENABLED, false)
 
-    /** Vertical anchor of the overlay text, in the [SubtitleOverlayView] coordinate space. */
-    fun position(context: Context): Float {
-        val stored = Settings.getInstance(context).all[SubtitleOverlayView.PREF_OVERLAY_POSITION]
-        return when (stored) {
-            is Int -> stored.coerceIn(MIN_POSITION_PERCENT, MAX_POSITION_PERCENT) / 100f
-            is Float -> stored.coerceIn(SubtitleOverlayView.MIN_POSITION, SubtitleOverlayView.MAX_POSITION)
-            else -> SubtitleOverlayView.DEFAULT_POSITION
-        }
-    }
+    /** Vertical anchor of the overlay text: 0.0 = bottom edge, 1.0 = top edge of the screen. */
+    fun position(context: Context): Float = SubtitlePosition.position(context)
+
+    /** Stores the anchor (normalized value). */
+    fun setPosition(context: Context, value: Float) =
+            SubtitlePosition.setPositionPercent(context, (value * 100).roundToInt())
 
     /**
      * Whether the overlay takes over the external subtitle at [source] instead of leaving it to
@@ -75,12 +63,12 @@ object SubtitleOverlayPrefs {
         return name.substringAfterLast('.', "").equals(SRT_EXTENSION, ignoreCase = true)
     }
 
-    /** Stores the anchor as the whole percentage the preferences seek bar edits. */
-    fun setPosition(context: Context, value: Float) {
-        Settings.getInstance(context).putSingle(
-                SubtitleOverlayView.PREF_OVERLAY_POSITION,
-                (value.coerceIn(SubtitleOverlayView.MIN_POSITION, SubtitleOverlayView.MAX_POSITION) * 100)
-                        .roundToInt()
-                        .coerceIn(MIN_POSITION_PERCENT, MAX_POSITION_PERCENT))
+    /**
+     * Name shown for [source] in the subtitle tracks menu while the overlay draws it: the file
+     * name, like VLC shows for an attached subtitle slave.
+     */
+    fun label(source: String): String {
+        val uri = Uri.parse(source)
+        return Uri.decode(uri.lastPathSegment ?: source)
     }
 }

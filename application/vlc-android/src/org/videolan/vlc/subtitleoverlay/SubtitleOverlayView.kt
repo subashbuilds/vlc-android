@@ -24,6 +24,7 @@ import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import org.videolan.tools.Settings
+import org.videolan.tools.SubtitlePosition
 import kotlin.math.min
 
 /**
@@ -33,16 +34,16 @@ import kotlin.math.min
  *
  * Geometry convention (documented, reused by the controller and preferences):
  *  - `positionPercent` is a NORMALIZED VERTICAL ANCHOR in [0.0 .. 1.0]
- *    expressed in the player-container coordinate space, where 0.0 is the top
- *    of the container and 1.0 is its bottom edge. The value is the Y of the
- *    BOTTOM of the subtitle text block.
- *  - The default (0.98) rests the text near the bottom inset of the container,
- *    the same place VLC-native subtitles usually appear.
- *  - Values < 1.0 raise the text; because this view paints over the WHOLE
- *    container (and is a plain View, not inside the video surface), text
- *    appears in the letterbox/pillarbox bars whenever the anchor lands there.
- *  - A minimum of 16dp of side/top border safety is enforced so text is never
- *    laid out at the extreme edges of the screen.
+ *    expressed in the player-container coordinate space, where 0.0 is the
+ *    BOTTOM of the container and 1.0 is its TOP edge.
+ *  - 0.0 rests the text block on the bottom edge of the screen and 1.0 puts it
+ *    at the very top; the whole height of the container is usable, so the
+ *    position is never left floating above the bottom of the screen.
+ *  - Because this view paints over the WHOLE container (and is a plain View,
+ *    not inside the video surface), text appears in the letterbox/pillarbox
+ *    bars whenever the anchor lands there.
+ *  - A minimum of 16dp of side border safety is enforced while wrapping so
+ *    long cues never leave the screen.
  *
  * The view only draws text; it never consumes touches
  * (enabled=false + no click/touch listeners), so player gestures keep working.
@@ -54,7 +55,7 @@ class SubtitleOverlayView @JvmOverloads constructor(
 
     private var cue: SubtitleCue? = null
 
-    /** Normalized anchor of the BOTTOM of the text block, 0.0 (top) .. 1.0 (bottom). */
+    /** Normalized anchor of the BOTTOM of the text block, 0.0 (bottom edge) .. 1.0 (top edge). */
     var positionPercent: Float = DEFAULT_POSITION
         set(value) {
             field = value.coerceIn(MIN_POSITION, MAX_POSITION)
@@ -169,9 +170,10 @@ class SubtitleOverlayView @JvmOverloads constructor(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        // Container geometry changed: clamp the anchor so the text block always
-        // fits fully inside the view, avoiding clipping at edges
-        // (controller re-queries this on layout changes)
+        // Container geometry changed: re-clamp the anchor (the travel across the
+        // container is recomputed from the current height at draw time), so the text
+        // block always fits fully inside the view (controller re-queries this on
+        // layout changes)
         positionPercent = positionPercent
     }
 
@@ -183,19 +185,23 @@ class SubtitleOverlayView @JvmOverloads constructor(
         val h = height
         if (w == 0 || h == 0) return
 
-        val blockHeight = cachedLineHeight * lines.size
         val safeMargin = min(16 * resources.displayMetrics.density, h * 0.05f)
         val maxWidth = w - 2 * safeMargin
         val drawLines = if (cachedTextWidth > maxWidth) wrapLines(lines, maxWidth) else lines
         val drawBlockHeight = drawLines.size * cachedLineHeight
 
-        // The anchor is the BOTTOM of the block in container coordinates
-        var bottomY = positionPercent * h
-        // Never let the text start above the top safe margin nor extend beyond
-        // the bottom edge of the container entirely
-        if (bottomY > h - safeMargin) bottomY = h - safeMargin
-        if (bottomY - drawBlockHeight < safeMargin) bottomY = (safeMargin + drawBlockHeight).coerceAtMost(h - safeMargin)
-        var baseline = bottomY - drawBlockHeight + cachedLineHeight * 0.85f
+        // The anchor is the BOTTOM of the block in container coordinates, 0.0 on the bottom edge
+        // of the container and 1.0 at its top: the block travels over the whole height, so a user
+        // asking for the bottom of the screen really gets the bottom of the screen.
+        val travel = (h - drawBlockHeight).coerceAtLeast(0f)
+        var bottomY = h - positionPercent * travel
+        // Keep the block inside the container (a cue with more lines than the screen can show
+        // must not be pushed over the top edge)
+        val topInset = min(4 * resources.displayMetrics.density, h * 0.01f)
+        if (bottomY > h) bottomY = h.toFloat()
+        if (bottomY - drawBlockHeight < topInset) bottomY = drawBlockHeight + topInset
+        // Baseline of the first line, from the (negative) ascent of the font
+        var baseline = bottomY - drawBlockHeight - textPaint.fontMetrics.ascent
 
         val centerX = w / 2f
         for (line in drawLines) {
@@ -238,16 +244,16 @@ class SubtitleOverlayView @JvmOverloads constructor(
     fun persistPosition() = SubtitleOverlayPrefs.setPosition(context, positionPercent)
 
     companion object {
-        /** Preference key holding [positionPercent] (as a percent, see SubtitleOverlayPrefs). */
-        const val PREF_OVERLAY_POSITION = "subtitle_overlay_position"
+        /** Preference key holding [positionPercent] (as a percent, see SubtitlePosition). */
+        const val PREF_OVERLAY_POSITION = SubtitlePosition.PREF_KEY
 
-        /** Highest positionPercent the overlay can be moved down to (bottom of the container). */
+        /** Highest positionPercent the overlay can be moved up to (top of the container). */
         const val MAX_POSITION = 1.0f
 
-        /** Lowest positionPercent the overlay can be moved up to. */
-        const val MIN_POSITION = 0.05f
+        /** Lowest positionPercent the overlay can be moved down to (bottom of the container). */
+        const val MIN_POSITION = 0.0f
 
-        /** Default anchor: the text rests near the bottom inset of the container. */
-        const val DEFAULT_POSITION = 0.98f
+        /** Default anchor: the text rests on the bottom edge of the container. */
+        const val DEFAULT_POSITION = 0.0f
     }
 }

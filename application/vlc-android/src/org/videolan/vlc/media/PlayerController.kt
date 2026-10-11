@@ -24,6 +24,7 @@ import org.videolan.tools.KEY_EQUALIZER_ENABLED
 import org.videolan.tools.*
 import org.videolan.vlc.*
 import org.videolan.vlc.gui.dialogs.VideoTracksDialog
+import org.videolan.vlc.subtitleoverlay.SubtitleOverlayRuntime
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayPrefs
 import org.videolan.vlc.gui.dialogs.adapters.VlcTrack
 import org.videolan.vlc.repository.EqualizerRepository
@@ -265,9 +266,23 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun getSpuTracks(): Array<out VlcTrack>? = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getAllSpuTracks() else emptyArray()
 
-    fun getSpuTrack() = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSelectedSpuTrack()?.getId() ?: "-1" else "-1"
+    /**
+     * Selected subtitle track. The overlay's own entry is reported while the overlay draws an
+     * external file (VLC knows nothing about that file, it is never attached as a slave); when the
+     * overlay draws a track embedded in the container, that track is reported instead, VLC's own
+     * rendering being off but the user's choice still being that track.
+     */
+    fun getSpuTrack(): String {
+        SubtitleOverlayRuntime.externalSubtitleLabel?.let { return SubtitleOverlayRuntime.TRACK_ID }
+        SubtitleOverlayRuntime.embeddedTrackId?.let { return it }
+        return if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSelectedSpuTrack()?.getId() ?: "-1" else "-1"
+    }
 
-    fun setSpuTrack(index: String) = !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setSpuTrack(index)
+    fun setSpuTrack(index: String): Boolean {
+        // The overlay's entry is not a libvlc track: choosing it keeps the overlay as the renderer
+        if (index == SubtitleOverlayRuntime.TRACK_ID) return SubtitleOverlayRuntime.externalSubtitleLabel != null
+        return !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setSpuTrack(index)
+    }
 
     fun getSpuTracksCount() = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSpuTracksCount() else 0
 
@@ -638,6 +653,27 @@ class ExternalAudioTrack(private val uri: Uri) : VlcTrack {
     override fun getName() = Uri.decode(uri.lastPathSegment ?: uri.toString())
 
     override fun getId() = EXTERNAL_AUDIO_TRACK_ID
+
+    override fun getWidth() = 0
+
+    override fun getHeight() = 0
+
+    override fun getProjection() = 0
+
+    override fun getFrameRateDen() = 0
+
+    override fun getFrameRateNum() = 0
+}
+
+/**
+ * Fake [VlcTrack] exposing the external subtitle drawn by the screen-anchored overlay in the
+ * subtitle tracks menu, so the current selection is visible and the entry can be picked again.
+ * Selecting it goes through [PlayerController.setSpuTrack], which never forwards it to libvlc.
+ */
+class OverlaySubtitleTrack(private val label: String) : VlcTrack {
+    override fun getName() = label
+
+    override fun getId() = SubtitleOverlayRuntime.TRACK_ID
 
     override fun getWidth() = 0
 

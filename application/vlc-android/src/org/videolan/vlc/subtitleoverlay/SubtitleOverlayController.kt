@@ -104,6 +104,7 @@ class SubtitleOverlayController(
     fun loadExternal(uri: Uri, charset: Charset? = null, onResult: ((Boolean) -> Unit)? = null) {
         loadJob?.cancel()
         provider?.release()
+        SubtitleOverlayRuntime.clear()
         val trackId = "$EXTERNAL_CUE_TRACK_PREFIX${uri}"
         val p = SrtSubtitleProvider(uri, trackId, owner, charset)
         provider = p
@@ -118,12 +119,63 @@ class SubtitleOverlayController(
                 if (provider !== p) return@withContext // superseded by a newer load
                 if (count > 0) {
                     enabled = true
+                    // Published so the subtitle menu shows (and can pick) what the overlay draws
+                    SubtitleOverlayRuntime.setExternalSubtitle(SubtitleOverlayPrefs.label(uri.toString()))
                     resync()
                 } else {
                     overlayView.setCue(null)
                     enabled = false
                 }
                 onResult?.invoke(count > 0)
+            }
+        }
+    }
+
+    /**
+     * Loads the text subtitle track embedded in the played media ([uri]) and shows it in sync with
+     * the playback. libvlc keeps the track selected while the overlay draws its cues, so the caller
+     * turns the native rendering off once this one succeeded ([onResult] reports the format).
+     *
+     * @param trackIndex ordinal of the track among the container's subtitle tracks, in the order
+     *   libvlc lists them in.
+     * @param nativeTrackId id libvlc uses for that track, reported to the subtitle menu as the
+     *   selected entry.
+     * @param onResult called on the main thread with the format of the track that was read: its cues
+     *   are displayed when the format is a text one, and null when the container could not be read
+     *   at all. A load superseded by a newer one reports nothing.
+     */
+    fun loadEmbedded(
+            uri: Uri,
+            trackIndex: Int,
+            language: String?,
+            nativeTrackId: String,
+            onResult: ((EmbeddedFormat?) -> Unit)? = null
+    ) {
+        loadJob?.cancel()
+        provider?.release()
+        SubtitleOverlayRuntime.clear()
+        val p = EmbeddedSubtitleProvider(
+                FileSubtitleSource(owner, uri), trackIndex, language, "$EMBEDDED_CUE_TRACK_PREFIX$nativeTrackId")
+        provider = p
+        loadJob = launch(Dispatchers.IO) {
+            val count = try {
+                p.load()
+            } catch (e: Exception) {
+                Log.e(TAG, "embedded load failed", e)
+                -1
+            }
+            val format = p.loadedFormat
+            withContext(Dispatchers.Main) {
+                if (provider !== p) return@withContext // superseded by a newer load
+                if (count > 0) {
+                    enabled = true
+                    SubtitleOverlayRuntime.setEmbeddedSubtitle(nativeTrackId)
+                    resync()
+                } else {
+                    overlayView.setCue(null)
+                    enabled = false
+                }
+                onResult?.invoke(format)
             }
         }
     }
@@ -136,6 +188,7 @@ class SubtitleOverlayController(
         provider = null
         lastCue = null
         overlayView.setCue(null)
+        SubtitleOverlayRuntime.clear()
         enabled = false
     }
 

@@ -81,6 +81,9 @@ interface SubtitleCueProvider {
 /** Stable ID prefix used to tag external-file cues inside [SubtitleCue.trackId]. */
 const val EXTERNAL_CUE_TRACK_PREFIX = "external-srt:"
 
+/** Stable ID prefix used to tag embedded-track cues inside [SubtitleCue.trackId]. */
+const val EMBEDDED_CUE_TRACK_PREFIX = "embedded:"
+
 /**
  * Immutable index over [SubtitleCue]s answering "which cue is displayed at a given
  * time" in O(log n), and the single implementation of the overlay's cue lookup:
