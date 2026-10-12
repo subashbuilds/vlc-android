@@ -85,6 +85,51 @@ class EmbeddedSubtitlesTest {
         assertEquals(untagged[0], EmbeddedSubtitles.matchTrack(untagged, 0, "eng"))
     }
 
+    private val tenLanguages = listOf("eng", "fre", "ger", "spa", "ita", "por", "rus", "jpn", "kor", "chi")
+
+    private fun tenTracks() = tenLanguages.mapIndexed { i, language ->
+        EmbeddedTrack(i, (i + 2).toLong(), EmbeddedFormat.SRT, language, null)
+    }
+
+    /** libvlc 3 lists "Disable" (id -1) in front of the tracks; libvlc 4 lists the tracks only. */
+    private val vlc3Menu = listOf("-1") + (0 until 10).map { (100 + it).toString() }
+    private val vlc4Menu = (0 until 10).map { (100 + it).toString() }
+
+    @Test
+    fun `every one of ten tracks is found, the last one included`() {
+        val tracks = tenTracks()
+        for (menu in listOf(vlc3Menu, vlc4Menu)) {
+            for (k in 0 until 10) {
+                val ordinal = EmbeddedSubtitles.containerOrdinalOf(menu, (100 + k).toString())
+                assertEquals(k, ordinal)
+                assertEquals(tracks[k], EmbeddedSubtitles.matchTrack(tracks, ordinal, tenLanguages[k]))
+            }
+        }
+    }
+
+    @Test
+    fun `the menu position of a VLC 3 list lost the last track`() {
+        // What the overlay used to pass: the position in the menu, one more than the ordinal because
+        // of the "Disable" entry. The other nine were rescued by the language, the tenth was one
+        // past the end of the container's track list and stayed on VLC's renderer.
+        val tracks = tenTracks()
+        assertEquals(tracks[0], EmbeddedSubtitles.matchTrack(tracks, vlc3Menu.indexOf("100"), "eng"))
+        assertEquals(tracks[8], EmbeddedSubtitles.matchTrack(tracks, vlc3Menu.indexOf("108"), "kor"))
+        assertNull(EmbeddedSubtitles.matchTrack(tracks, vlc3Menu.indexOf("109"), "chi"))
+    }
+
+    @Test
+    fun `entries that are not container tracks are never counted`() {
+        val menu = listOf("-1", "5", SubtitleOverlayRuntime.TRACK_ID, "6")
+        assertEquals(0, EmbeddedSubtitles.containerOrdinalOf(menu, "5"))
+        assertEquals(1, EmbeddedSubtitles.containerOrdinalOf(menu, "6"))
+        assertEquals(-1, EmbeddedSubtitles.containerOrdinalOf(menu, "-1"))
+        assertEquals(-1, EmbeddedSubtitles.containerOrdinalOf(menu, "-2"))
+        assertEquals(-1, EmbeddedSubtitles.containerOrdinalOf(menu, SubtitleOverlayRuntime.TRACK_ID))
+        assertEquals(-1, EmbeddedSubtitles.containerOrdinalOf(menu, "99"))
+        assertEquals(-1, EmbeddedSubtitles.containerOrdinalOf(emptyList(), "5"))
+    }
+
     @Test
     fun `only text formats are drawn by the overlay`() {
         assertTrue(EmbeddedFormat.SRT.text)

@@ -492,7 +492,12 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         if (service != null && location != null && adoptSubtitleSlave(service.currentMediaWrapper, trackId))
             return true
 
-        val index = service?.spuTracks?.indexOfFirst { it.getId() == trackId } ?: -1
+        // Ordinal among the container's subtitle tracks, NOT the position in libvlc's menu: on VLC 3
+        // the menu starts with a "Disable" entry, which would shift every ordinal by one and push
+        // the last track of the container past the end of its track list (see containerOrdinalOf)
+        val index = service?.spuTracks?.let { tracks ->
+            EmbeddedSubtitles.containerOrdinalOf(tracks.map { it.getId() }, trackId)
+        } ?: -1
         if (service == null || index < 0 || location == null) {
             // Not an embedded track (or the media is gone): only libvlc's own description can tell
             // what the format is

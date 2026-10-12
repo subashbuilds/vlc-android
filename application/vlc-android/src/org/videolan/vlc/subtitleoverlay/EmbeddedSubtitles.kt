@@ -356,6 +356,35 @@ object EmbeddedSubtitles {
             }
 
     /**
+     * Entries of libvlc's subtitle menu that are not tracks of the container: "-1" is libvlc's
+     * "Disable" entry, "-2" the player's "nothing selected" sentinel and [SubtitleOverlayRuntime.TRACK_ID]
+     * the overlay's own entry for an external file.
+     */
+    private val NOT_CONTAINER_TRACK_IDS = setOf("-1", "-2", SubtitleOverlayRuntime.TRACK_ID)
+
+    /**
+     * Ordinal, among the subtitle tracks *of the container*, of the track [trackId], given the ids
+     * libvlc lists in its subtitle menu ([listedIds], in menu order); -1 when [trackId] is not a
+     * container track of that list.
+     *
+     * The menu is not the container's track list: VLC 3 puts a "Disable" entry (id "-1") in front
+     * of the tracks (VLC 4 does not). Using the position in the menu shifted every ordinal by one
+     * on VLC 3: the other tracks were only rescued by the language check of [matchTrack], while the
+     * LAST track of the container landed one past the end of its track list, was never found and
+     * stayed on VLC's own renderer (scaling and moving with the video).
+     */
+    fun containerOrdinalOf(listedIds: List<String>, trackId: String): Int {
+        if (trackId in NOT_CONTAINER_TRACK_IDS) return -1
+        var ordinal = 0
+        for (id in listedIds) {
+            if (id in NOT_CONTAINER_TRACK_IDS) continue
+            if (id == trackId) return ordinal
+            ordinal++
+        }
+        return -1
+    }
+
+    /**
      * The track to render, or null when the container has no such subtitle track: [index] is the
      * ordinal libvlc assigned to the selected track, [language] what libvlc reports for it.
      * The language is a safeguard against a different track order: a track carrying another
