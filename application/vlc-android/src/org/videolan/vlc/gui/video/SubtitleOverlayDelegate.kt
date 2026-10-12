@@ -20,7 +20,6 @@ package org.videolan.vlc.gui.video
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.SystemClock
-import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.lifecycle.lifecycleScope
@@ -119,28 +118,6 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
 
     /** Last track auto-adoption was attempted for (nil media guard, see [autoAdoptNativeSubtitle]). */
     private var lastAutoAdoptAttempted: String? = null
-
-    /**
-     * Uptime-ms deadline until which implicit subtitle decisions (the saved-track restore, the
-     * preferred-language reselection and the Playing/Vout auto-adoptions) must not override an
-     * explicit pick of the user. Selecting another track from the menu fires the ESAdded(Text)
-     * restore path right behind it (the activity replays the *saved* meta, which still holds the
-     * previous track), and it used to cancel the in-flight container read of the freshly picked
-     * track — the pick then fell back to VLC's own renderer and scaled with the video. The
-     * explicit pick persists its own track id (rememberSubtitleTrack), so the restore that runs
-     * after the grace period converges on it anyway.
-     */
-    private var explicitPickHoldUntilMs: Long = 0L
-
-    /** Whether implicit subtitle decisions are currently suppressed (see [explicitPickHoldUntilMs]). */
-    private fun explicitPickOnHold(): Boolean {
-        if (explicitPickHoldUntilMs == 0L) return false
-        if (SystemClock.elapsedRealtime() >= explicitPickHoldUntilMs) {
-            explicitPickHoldUntilMs = 0L
-            return false
-        }
-        return true
-    }
 
     /**
      * Uptime-ms deadline until which implicit subtitle decisions (the saved-track restore, the
