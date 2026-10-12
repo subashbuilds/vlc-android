@@ -20,6 +20,7 @@ package org.videolan.vlc.subtitleoverlay
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -72,7 +73,16 @@ class SubtitleOverlayController(
         private val overlayView: SubtitleOverlayView
 ) : CoroutineScope {
 
-    override val coroutineContext = Dispatchers.Main.immediate + SupervisorJob()
+    /**
+     * Catches anything a parser or window loader throws outside its own try/catch: a subtitle
+     * problem is a rendering problem and must never be an application crash (see the regex
+     * engine incompatibility that used to kill the process on the first embedded track).
+     */
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        Log.e(TAG, "subtitle overlay background failure contained", throwable)
+    }
+
+    override val coroutineContext = Dispatchers.Main.immediate + SupervisorJob() + exceptionHandler
 
     companion object {
         /** Preference key for the overlay enable state. */

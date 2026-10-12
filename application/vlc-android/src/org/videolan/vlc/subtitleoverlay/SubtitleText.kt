@@ -26,9 +26,8 @@ import java.nio.charset.StandardCharsets
  */
 object SubtitleText {
 
-    /** Inline markup the overlay does not render: `<i>`, `{...}` styling, `{\an8}` placement. */
+    /** Inline markup the overlay does not render: `<i>` tags and `{\an8}`-style `\N` breaks. */
     private val HTML_TAG = Regex("<[^>]*>")
-    private val BRACE_TAG = Regex("\\{[^}]*}")
     private val BACKSLASH_TAG = Regex("\\\\[Nnh]")
 
     /** Charsets probed (in order) when the bytes are not valid UTF-8. */
@@ -75,9 +74,39 @@ object SubtitleText {
     /** Removes inline markup from a single line and trims trailing whitespace. */
     fun cleanLine(line: String): String =
             line.replace(HTML_TAG, "")
-                    .replace(BRACE_TAG, "")
+                    .let(::stripBraceTags)
                     .replace(BACKSLASH_TAG, " ")
                     .trim()
+
+    /**
+     * Removes the `{...}` tag blocks (SubStation inline styling, `{\an8}` placement...).
+     *
+     * Deliberately NOT a regex: the pattern equivalent to `\\{[^}]*}` is valid on the desktop JVM
+     * regex but rejected by the ICU regex engine of some Android devices (a bare closing `}`
+     * without a corresponding escaped opening `\{` is a syntax error there), and as an object
+     * property it made the first cue parse crash the whole app with an
+     * ExceptionInInitializerError, which repeatedly closed the video at track selection.
+     */
+    private fun stripBraceTags(value: String): String {
+        if ('{' !in value) return value
+        val sb = StringBuilder(value.length)
+        var i = 0
+        val n = value.length
+        while (i < n) {
+            val c = value[i]
+            if (c == '{') {
+                val close = value.indexOf('}', i + 1)
+                if (close >= 0) {
+                    i = close + 1
+                    continue
+                }
+                // An unmatched '{' is not a tag: it is kept, like the regex used to leave it
+            }
+            sb.append(c)
+            i++
+        }
+        return sb.toString()
+    }
 
     /** True when the decoded text looks like a wrong-charset decoding (lots of replacement chars). */
     private fun looksGarbled(decoded: String): Boolean {
