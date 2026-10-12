@@ -21,6 +21,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -259,7 +260,18 @@ class EmbeddedSubtitleProvider(
         source.close()
     }
 
-    /** Keeps a window of cues around the playhead, following the playback (and its seeks). */
+    /**
+     * Keeps a window of cues around the playhead, following the playback (and its seeks).
+     *
+     * The window loads run on this job's dispatcher and are *blocking* reads (a [CueWindowLoader]
+     * walks the container), so coroutine cancellation does not interrupt them: it only marks the
+     * job cancelled and the next suspension point (the [delay] below) throws
+     * [JobCancellationException]. The worker must then LEAVE the loop immediately: catching that
+     * exception here and retrying would keep a cancelled provider reading behind a released
+     * loader (its file descriptor is already closed), spin forever on the swallowing retry loop
+     * and starve the replacement track's own window worker (every run loops silently and keeps the
+     * IO dispatcher busy, breaking the next track picked in the menu).
+     */
     private fun startWorker(newLoader: CueWindowLoader) {
         worker = scope.launch {
             var loadedFrom = Long.MIN_VALUE
@@ -287,6 +299,9 @@ class EmbeddedSubtitleProvider(
                     index = CueIndex(cues)
                     // Let a pending seek take over before loading more
                     delay(10)
+                } catch (e: CancellationException) {
+                    Log.i(TAG, "embedded subtitle window worker cancelled")
+                    break
                 } catch (e: Exception) {
                     Log.w(TAG, "embedded subtitle window failed", e)
                     delay(IDLE_DELAY_MS)

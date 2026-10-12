@@ -20,6 +20,7 @@ package org.videolan.vlc.subtitleoverlay
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -121,6 +122,8 @@ class SubtitleOverlayController(
         loadJob = launch(Dispatchers.IO) {
             val count = try {
                 p.load()
+            } catch (e: CancellationException) {
+                throw e // superseded load cleanly cancelled, not a read failure
             } catch (e: Exception) {
                 Log.e(TAG, "external load failed", e)
                 -1
@@ -170,6 +173,8 @@ class SubtitleOverlayController(
         loadJob = launch(Dispatchers.IO) {
             val count = try {
                 p.load()
+            } catch (e: CancellationException) {
+                throw e // superseded load cleanly cancelled, not a read failure
             } catch (e: Exception) {
                 Log.e(TAG, "embedded load failed", e)
                 -1
