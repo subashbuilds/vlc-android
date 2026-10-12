@@ -108,16 +108,16 @@ class VideoTracksDialog : VLCBottomSheetDialogFragment() {
                     // track (the file is never attached as a slave): it is added here so the
                     // subtitle the user sees is the one shown as selected in the menu
                     val overlayEntry = SubtitleOverlayRuntime.externalSubtitleLabel?.let { OverlaySubtitleTrack(it) }
-                    val displayedTracks: Array<VlcTrack> = when {
-                        overlayEntry != null && trackList.none { it.getId() == overlayEntry.getId() } ->
-                            // Array<out VlcTrack> + VlcTrack — Array.plus(element) returns Array<T>
-                            (trackList + overlayEntry) as Array<VlcTrack>
-                        overlayEntry != null ->
-                            trackList as Array<VlcTrack>
-                        else ->
-                            trackList as Array<VlcTrack>
+                    val displayedTracks = ArrayList<VlcTrack>(trackList.size + 1)
+                    var alreadyShown = false
+                    for (t in trackList) {
+                        if (overlayEntry != null && t.getId() == overlayEntry.getId()) alreadyShown = true
+                        displayedTracks.add(t)
                     }
-                    val trackAdapter = TrackAdapter(generateTrackList(displayedTracks), displayedTracks.firstOrNull { it.getId() == playbackService.spuTrack }, getString(R.string.track_text))
+                    // The external subtitle drawn by the overlay is not a libvlc track: append it
+                    // (Array<out VlcTrack> has no plus(VlcTrack) overload, hence the manual merge)
+                    if (overlayEntry != null && !alreadyShown) displayedTracks.add(overlayEntry)
+                    val trackAdapter = TrackAdapter(displayedTracks.toTypedArray(), displayedTracks.firstOrNull { it.getId() == playbackService.spuTrack }, getString(R.string.track_text))
                     trackAdapter.setOnTrackSelectedListener { track ->
                         trackSelectionListener.invoke(track.getId(), TrackType.SPU)
                     }
