@@ -28,9 +28,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.interfaces.IMedia
+import org.videolan.medialibrary.interfaces.Medialibrary
+import org.videolan.medialibrary.interfaces.media.MediaWrapper
 import org.videolan.resources.VLCInstance
 import org.videolan.tools.Settings
 import org.videolan.tools.SubtitlePosition
+import org.videolan.tools.runIO
 import org.videolan.vlc.PlaybackService
 import org.videolan.vlc.R
 import org.videolan.vlc.getAllTracks
@@ -147,14 +150,37 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
             MediaPlayer.Event.Playing -> {
                 controller?.resync()
                 // VLC selects its own subtitle track when a media starts (the preferred track
-                // restored by PlayerController.loadMediaMeta or the activity): the same text would
-                // be rendered twice, so the track is taken away again and remembered
-                syncNativeSubtitleRendering()
+                // restored by PlayerController.loadMediaMeta, the activity, or libvlc itself): the
+                // same text would be rendered twice, so the track is taken over or taken away
+                if (!rendersSubtitle) autoAdoptNativeSubtitle() else syncNativeSubtitleRendering()
             }
-            MediaPlayer.Event.Vout -> controller?.resync()
+            MediaPlayer.Event.Vout -> {
+                controller?.resync()
+                // A track libvlc selected by itself ( VLC4 does this for its preferred language)
+                // is only visible once there is a video output; adopting here keeps the first
+                // subtitle from being rendered by the engine before the overlay takes it over.
+                if (!rendersSubtitle) autoAdoptNativeSubtitle()
+            }
             else -> {}
         }
         controller?.onMediaPlayerEvent(event)
+    }
+
+    /**
+     * When libvlc selected a subtitle track on its own (the engine's auto-selection, not an
+     * app-initiated one) and the overlay is enabled, that track is adopted by the overlay: an
+     * embedded text track is loaded from the container and VLC's own rendering is turned off
+     * (see [adoptSubtitleSelection]). Non-text formats (ASS/SSA, bitmap) stay on VLC.
+     *
+     * Nothing happens while the overlay already renders a subtitle of this media, nor when the
+     * player intentionally selected "no subtitle" ("-1"/-2 sentinels).
+     */
+    private fun autoAdoptNativeSubtitle() {
+        if (!isEnabled) return
+        val service = activity.service ?: return
+        val current = service.spuTrack
+        if (current == NO_NATIVE_SUBTITLE || current == NO_TRACK) return
+        adoptSubtitleSelection(current, explicit = false)
     }
 
     /**
@@ -294,7 +320,10 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         controller?.onMediaChanged()
         clearRenderingState()
         SubtitleOverlayRuntime.clear()
-        restoreNativeSubtitleRendering()
+        // The remembered native track belongs to the previous media: giving it to VLC here would
+        // select a (wrong) track of the new one. It is simply forgotten, the new media's preference
+        // (media meta, preferred language) being applied by the player itself.
+        nativeSubtitleBeforeOverlay = null
         restoreSubtitle()
     }
 
@@ -395,8 +424,16 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         if (trackId == NO_NATIVE_SUBTITLE || trackId == NO_TRACK) return false
 
         val service = activity.service
-        val index = service?.spuTracks?.indexOfFirst { it.getId() == trackId } ?: -1
         val location = service?.currentMediaWrapper?.location
+
+        // A subtitle slave of the media (an attached .srt) shows up in the tracks menu too. It is
+        // not a track of the container: loading the container here would find a wrong (or no)
+        // ordinal and leave the file to VLC, whose renderer scales text with the video size.
+        // When the menu entry is that file instead, the overlays draws it itself.
+        if (service != null && location != null && adoptSubtitleSlave(service.currentMediaWrapper, trackId))
+            return true
+
+        val index = service?.spuTracks?.indexOfFirst { it.getId() == trackId } ?: -1
         if (service == null || index < 0 || location == null) {
             // Not an embedded track (or the media is gone): only libvlc's own description can tell
             // what the format is
@@ -436,7 +473,57 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
             activeExternalSubtitle = null
             rendersSubtitle = true
             syncNativeSubtitleRendering()
+            rememberSubtitleTrack(trackId)
         }
+    }
+
+    /**
+     * Remembers [trackId] as the subtitle track of the current media, like the non-overlay path of
+     * the tracks menu does: without this, a reload of the player (libvlc option change, subtitle
+     * position change) restores "no subtitle" and the user has to pick the track again.
+     */
+    private fun rememberSubtitleTrack(trackId: String) {
+        val mw = activity.service?.currentMediaWrapper ?: return
+        runIO {
+            runCatching {
+                val media = Medialibrary.getInstance().findMedia(mw)
+                val libraryMedia = media?.takeIf { it.id != 0L } ?: return@runCatching
+                libraryMedia.setStringMeta(MediaWrapper.META_SUBTITLE_TRACK, trackId)
+            }
+        }
+    }
+
+    /**
+     * Whether the menu entry [trackId] is a subtitle file attached to the media (a slave), in
+     * which case the overlay loads that file and returns true (VLC must not render it).
+     *
+     * VLC reports an attached subtitle as a track named after the file; the media's slaves and
+     * the persisted ones are searched for a matching file name. The overlay handles it when it is
+     * a SubRip file it is able to parse.
+     */
+    private fun adoptSubtitleSlave(mw: MediaWrapper?, trackId: String): Boolean {
+        if (mw == null || trackId == NO_NATIVE_SUBTITLE || trackId == NO_TRACK) return false
+        val description = descriptionOf(trackId)
+        if (description.isBlank()) return false
+        val sources = ArrayList<String>(4)
+        mw.slaves?.filter { it.type == IMedia.Slave.Type.Subtitle }?.forEach { sources.add(it.uri) }
+        if (sources.isEmpty()) return false
+        // VLC names an attached subtitle track after its file: match the entry against the known
+        // slaves (the persisted ones are already in mw.slaves once VLC attached them), without a
+        // blocking repository read (the caller is on the main thread)
+        val fileName = description.substringAfterLast('\\').trim()
+        val bareName = fileName.substringBeforeLast('.', fileName)
+        val source = sources.firstOrNull { slaveUri ->
+            val name = SubtitleOverlayPrefs.label(slaveUri)
+            name.equals(fileName, ignoreCase = true) || name.startsWith("$bareName.", ignoreCase = true)
+        } ?: return false
+        if (!SubtitleOverlayPrefs.handles(activity, source)) return false
+        // The entry belongs to the overlay from now on: forget any subtitle that was given back
+        // to VLC and draw the file
+        requestedSubtitle = null
+        requestedForMedia = mw.location
+        loadSubtitle(toUri(source))
+        return rendersSubtitle
     }
 
     /**
