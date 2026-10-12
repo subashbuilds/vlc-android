@@ -19,6 +19,8 @@ package org.videolan.vlc.gui.video
 
 import android.content.SharedPreferences
 import android.net.Uri
+import android.os.SystemClock
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import androidx.lifecycle.lifecycleScope
@@ -86,6 +88,14 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
 
         /** Subtitle track id meaning "nothing selected/restored" (see VideoPlayerActivity). */
         private const val NO_TRACK = "-2"
+
+        /**
+         * How long implicit subtitle decisions are suppressed after an explicit track pick (see
+         * [onNativeSubtitleSelected]). Covers the ESAdded(Text) restore the activity fires right
+         * behind the pick plus the first Playing/Vout auto-adoptions; the deferred restore of the
+         * (now updated) saved track applies the pick again afterwards.
+         */
+        private const val EXPLICIT_PICK_HOLD_MS = 4_000L
     }
 
     private val settings = Settings.getInstance(activity)
@@ -109,6 +119,50 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
 
     /** Last track auto-adoption was attempted for (nil media guard, see [autoAdoptNativeSubtitle]). */
     private var lastAutoAdoptAttempted: String? = null
+
+    /**
+     * Uptime-ms deadline until which implicit subtitle decisions (the saved-track restore, the
+     * preferred-language reselection and the Playing/Vout auto-adoptions) must not override an
+     * explicit pick of the user. Selecting another track from the menu fires the ESAdded(Text)
+     * restore path right behind it (the activity replays the *saved* meta, which still holds the
+     * previous track), and it used to cancel the in-flight container read of the freshly picked
+     * track — the pick then fell back to VLC's own renderer and scaled with the video. The
+     * explicit pick persists its own track id (rememberSubtitleTrack), so the restore that runs
+     * after the grace period converges on it anyway.
+     */
+    private var explicitPickHoldUntilMs: Long = 0L
+
+    /** Whether implicit subtitle decisions are currently suppressed (see [explicitPickHoldUntilMs]). */
+    private fun explicitPickOnHold(): Boolean {
+        if (explicitPickHoldUntilMs == 0L) return false
+        if (SystemClock.elapsedRealtime() >= explicitPickHoldUntilMs) {
+            explicitPickHoldUntilMs = 0L
+            return false
+        }
+        return true
+    }
+
+    /**
+     * Uptime-ms deadline until which implicit subtitle decisions (the saved-track restore, the
+     * preferred-language reselection and the Playing/Vout auto-adoptions) must not override an
+     * explicit pick of the user. Selecting another track from the menu fires the ESAdded(Text)
+     * restore path right behind it (the activity replays the *saved* meta, which still holds the
+     * previous track), and it used to cancel the in-flight container read of the freshly picked
+     * track — the pick then fell back to VLC's own renderer and scaled with the video. The
+     * explicit pick persists its own track id (rememberSubtitleTrack), so the restore that runs
+     * after the grace period converges on it anyway.
+     */
+    private var explicitPickHoldUntilMs: Long = 0L
+
+    /** Whether implicit subtitle decisions are currently suppressed (see [explicitPickHoldUntilMs]). */
+    private fun explicitPickOnHold(): Boolean {
+        if (explicitPickHoldUntilMs == 0L) return false
+        if (SystemClock.elapsedRealtime() >= explicitPickHoldUntilMs) {
+            explicitPickHoldUntilMs = 0L
+            return false
+        }
+        return true
+    }
 
     /** Native subtitle track that was displayed before the overlay took the rendering over. */
     private var nativeSubtitleBeforeOverlay: String? = null
@@ -180,6 +234,9 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
      */
     private fun autoAdoptNativeSubtitle() {
         if (!isEnabled) return
+        // An explicit pick in flight wins: the auto-adoption reads VLC's own selection, which may
+        // still report the previous track (or nothing) while the pick's container read is running
+        if (explicitPickOnHold()) return
         val service = activity.service ?: return
         val current = service.spuTrack
         if (current == NO_NATIVE_SUBTITLE || current == NO_TRACK) return
@@ -231,6 +288,10 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
                 nativeSubtitleBeforeOverlay = nativeSubtitleBeforeOverlay ?: trackId
             return true
         }
+        // A restore of the *saved* track right after an explicit pick would cancel the pick's
+        // in-flight container read and land the playback back on the old track; the pick itself
+        // persists its id, so the deferred restore converges on it (see explicitPickHoldUntilMs)
+        if (explicitPickOnHold()) return false
         return adoptSubtitleSelection(trackId, explicit = false)
     }
 
@@ -241,7 +302,13 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
      * @return true when the overlay keeps drawing the chosen entry, in which case VLC must not be
      *   given the track (selecting it would draw the same text twice).
      */
-    fun onNativeSubtitleSelected(trackId: String): Boolean = adoptSubtitleSelection(trackId, explicit = true)
+    fun onNativeSubtitleSelected(trackId: String): Boolean {
+        // Shield the takeover from the restore/auto-adopt flows that the selection itself triggers
+        // (ESAdded(Text) replays the saved track, Playing/Vout run auto-adoptions): for a moment
+        // they must not cancel the freshly started container read of the picked track
+        explicitPickHoldUntilMs = SystemClock.elapsedRealtime() + EXPLICIT_PICK_HOLD_MS
+        return adoptSubtitleSelection(trackId, explicit = true)
+    }
 
     /** Detach from the activity; release the view and controller. */
     fun release() {
@@ -331,6 +398,7 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         clearRenderingState()
         SubtitleOverlayRuntime.clear()
         this.lastAutoAdoptAttempted = null
+        explicitPickHoldUntilMs = 0L
         // The remembered native track belongs to the previous media: giving it to VLC here would
         // select a (wrong) track of the new one. It is simply forgotten, the new media's preference
         // (media meta, preferred language) being applied by the player itself.

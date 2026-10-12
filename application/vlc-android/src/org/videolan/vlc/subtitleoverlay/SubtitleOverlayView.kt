@@ -64,12 +64,18 @@ class SubtitleOverlayView @JvmOverloads constructor(
 
     // ---- appearance ----
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
+        // Left-align the paint and place lines by measured width in onDraw: Align.CENTER rounds
+        // asymmetrically on some devices (text a hair off the middle), measured left placement
+        // cannot.
+        textAlign = Paint.Align.LEFT
         typeface = Typeface.DEFAULT
     }
     private val bgPaint = Paint().apply { style = Paint.Style.FILL }
     private val outlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.CENTER
+        // Left-align the paint and place lines by measured width in onDraw: Align.CENTER rounds
+        // asymmetrically on some devices (text a hair off the middle), measured left placement
+        // cannot.
+        textAlign = Paint.Align.LEFT
         typeface = Typeface.DEFAULT
         style = Paint.Style.STROKE
     }
@@ -203,19 +209,24 @@ class SubtitleOverlayView @JvmOverloads constructor(
         // Baseline of the first line, from the (negative) ascent of the font
         var baseline = bottomY - drawBlockHeight - textPaint.fontMetrics.ascent
 
+        // Each line is placed by its measured width instead of relying on Paint.Align.CENTER:
+        // some OEM builds round Align.CENTER draws onto whole pixels asymmetrically, which the
+        // user perceived as the text sitting slightly left of the true middle. Left-aligned
+        // drawing at (w - lineWidth) / 2 puts the glyph box exactly around the center every time.
         val centerX = w / 2f
         for (line in drawLines) {
+            val lineWidth = textPaint.measureText(line)
+            val lineLeft = ((w - lineWidth) / 2f).coerceAtLeast(safeMargin)
             if (bgOpacity > 0) {
-                val lineWidth = textPaint.measureText(line)
                 val pad = 6 * resources.displayMetrics.density
                 bgPaint.color = applyAlpha(bgColor, bgOpacity)
-                canvas.drawRect(centerX - lineWidth / 2 - pad, baseline - textSizePx,
-                        centerX + lineWidth / 2 + pad, baseline + textSizePx * 0.35f, bgPaint)
+                canvas.drawRect(lineLeft - pad, baseline - textSizePx,
+                        lineLeft + lineWidth + pad, baseline + textSizePx * 0.35f, bgPaint)
             }
             if (outlineOpacity > 0 && outlineWidthPx > 0f) {
-                canvas.drawText(line, centerX, baseline, outlinePaint)
+                canvas.drawText(line, lineLeft, baseline, outlinePaint)
             }
-            canvas.drawText(line, centerX, baseline, textPaint)
+            canvas.drawText(line, lineLeft, baseline, textPaint)
             baseline += cachedLineHeight
         }
     }
