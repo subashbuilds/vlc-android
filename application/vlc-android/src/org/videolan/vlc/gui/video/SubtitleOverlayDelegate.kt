@@ -107,6 +107,9 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
     private var restoreJob: Job? = null
     private var resolveJob: Job? = null
 
+    /** Last track auto-adoption was attempted for (nil media guard, see [autoAdoptNativeSubtitle]). */
+    private var lastAutoAdoptAttempted: String? = null
+
     /** Native subtitle track that was displayed before the overlay took the rendering over. */
     private var nativeSubtitleBeforeOverlay: String? = null
 
@@ -180,6 +183,13 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         val service = activity.service ?: return
         val current = service.spuTrack
         if (current == NO_NATIVE_SUBTITLE || current == NO_TRACK) return
+        // Vout sees several events for the same playback (vout attach, re-attach on PiP/clone...);
+        // the container read of a pending adoption must not be torn down repeatedly. Once the
+        // adoption succeeded or was attempted for this media, the playback events drive the rest.
+        if (current == lastAutoAdoptAttempted) return
+        // Already the track the overlay registers for itself: nothing to do
+        if (SubtitleOverlayRuntime.embeddedTrackId == current) return
+        lastAutoAdoptAttempted = current
         adoptSubtitleSelection(current, explicit = false)
     }
 
@@ -320,6 +330,7 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
         controller?.onMediaChanged()
         clearRenderingState()
         SubtitleOverlayRuntime.clear()
+        this.lastAutoAdoptAttempted = null
         // The remembered native track belongs to the previous media: giving it to VLC here would
         // select a (wrong) track of the new one. It is simply forgotten, the new media's preference
         // (media meta, preferred language) being applied by the player itself.
@@ -415,6 +426,9 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
             nativeSubtitleBeforeOverlay = null
             requestedSubtitle = null
             requestedForMedia = null
+            // The user's explicit pick may be the same track the auto-adoption already tried: the
+            // next auto-adoption (Vout) must be allowed to run for it again
+            lastAutoAdoptAttempted = null
         }
         // Any other choice belongs to VLC: the overlay stops drawing what it had
         if (rendersSubtitle) {
@@ -531,14 +545,24 @@ class SubtitleOverlayDelegate(private val activity: VideoPlayerActivity) :
      * (ASS/SSA) and bitmap subtitles are authored with their own coordinates and must not be moved,
      * text subtitles follow the app-wide position setting.
      *
-     * `--sub-margin` is read when the video output is created, so the change is applied by rebuilding
-     * the engine and replaying the current media where it is (see `PlaylistManager.reload`).
+     * When a styled subtitle is selected, no playback reload is triggered: VLC3 can only change
+     * `--sub-margin` by rebuilding the engine, which replays the media and looks like the video
+     * closing. The styled state is only recorded here so that the next engine build (media change,
+     * libvlc option change) is created without the margin, matching VLC's own coordinates. Text
+     * subtitles mixed into the same playback stay on the overlay anyway, so VLC's margin does not
+     * matter for them while the overlay draws them.
      */
     private fun applySubtitleMargin(styled: Boolean) {
-        if (!SubtitlePosition.setStyledSubtitleActive(activity, styled)) return
-        activity.lifecycleScope.launch {
-            withContext(Dispatchers.IO) { VLCInstance.restart() }
-            PlaybackService.instance?.reloadPlayback()
+        SubtitlePosition.setStyledSubtitleActive(activity, styled)
+        if (!styled) {
+            // Text subtitle selected: the margin the running engine was built with matches the
+            // position setting in almost every case (it was built from it); only the styled flag
+            // going back to text needs a new engine, and the playback reload that goes with it.
+            if (!SubtitlePosition.needsEngineRefresh(activity)) return
+            activity.lifecycleScope.launch {
+                withContext(Dispatchers.IO) { VLCInstance.restart() }
+                PlaybackService.instance?.reloadPlayback()
+            }
         }
     }
 
