@@ -92,10 +92,7 @@ import org.videolan.vlc.databinding.PlayerHudRightBinding
 import org.videolan.vlc.gui.audio.PlaylistAdapter
 import org.videolan.vlc.gui.browser.FilePickerActivity
 import org.videolan.vlc.gui.browser.KEY_MEDIA
-<<<<<<< HEAD
 import org.videolan.vlc.gui.browser.KEY_PICKER_TYPE
-=======
->>>>>>> upstream/master
 import org.videolan.vlc.gui.dialogs.VideoTracksDialog
 import org.videolan.vlc.gui.helpers.BookmarkListDelegate
 import org.videolan.vlc.gui.helpers.OnRepeatListenerKey
@@ -109,14 +106,10 @@ import org.videolan.vlc.gui.helpers.hf.checkPIN
 import org.videolan.vlc.gui.view.PlayerProgress
 import org.videolan.vlc.isVLC4
 import org.videolan.vlc.manageAbRepeatStep
-<<<<<<< HEAD
 import org.videolan.vlc.media.EXTERNAL_AUDIO_TRACK_ID
 import org.videolan.vlc.media.MediaUtils
 import org.videolan.vlc.providers.PickerType
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayRuntime
-=======
-import org.videolan.vlc.media.MediaUtils
->>>>>>> upstream/master
 import org.videolan.vlc.util.FileUtils
 import org.videolan.vlc.util.getScreenWidth
 import org.videolan.vlc.util.isSchemeFile
@@ -273,47 +266,31 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
     }
 
     fun showTracks() {
-<<<<<<< HEAD
         player.showTrackOptions(
                 { menuOption ->
                     when (menuOption) {
-=======
-        player.showVideoTrack(
-                {
-                    when (it) {
->>>>>>> upstream/master
                         VideoTracksDialog.VideoTrackOption.AUDIO_DELAY -> player.delayDelegate.showAudioDelaySetting()
                         VideoTracksDialog.VideoTrackOption.SUB_DELAY -> player.delayDelegate.showSubsDelaySetting()
                         VideoTracksDialog.VideoTrackOption.SUB_DOWNLOAD -> downloadSubtitles()
                         VideoTracksDialog.VideoTrackOption.SUB_PICK -> pickSubtitles()
                     }
-<<<<<<< HEAD
                 }, { audioOption ->
                     when (audioOption) {
                         VideoTracksDialog.AudioTrackOption.AUDIO_PICK -> pickAudioFile()
                     }
-=======
->>>>>>> upstream/master
                 }, { trackID: String, trackType: VideoTracksDialog.TrackType ->
             when (trackType) {
                 VideoTracksDialog.TrackType.AUDIO -> {
                     player.service?.let { service ->
-<<<<<<< HEAD
                         // Picking anything but the external entry gives the audio back to the main player
                         if (trackID != EXTERNAL_AUDIO_TRACK_ID) service.stopExternalAudio()
-=======
->>>>>>> upstream/master
                         if (isVLC4() && trackID == "-1")
                             service.unselectTrackType(trackType)
                         else
                             service.setAudioTrack(trackID)
-<<<<<<< HEAD
                         // The external audio entry is not a media track: never persist it as the
                         // preferred audio track of the media
                         if (trackID != EXTERNAL_AUDIO_TRACK_ID) runIO {
-=======
-                        runIO {
->>>>>>> upstream/master
                             val mw = player.medialibrary.findMedia(service.currentMediaWrapper)
                             if (mw != null && mw.id != 0L) mw.setStringMeta(MediaWrapper.META_AUDIOTRACK, trackID)
                         }
@@ -321,7 +298,6 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
                 }
                 VideoTracksDialog.TrackType.SPU -> {
                     player.service?.let { service ->
-<<<<<<< HEAD
                         // An explicit subtitle choice wins over the screen-anchored overlay, which
                         // stops drawing what it had so VLC renders the entry the user picked...
                         val overlayKeepsIt = player.subtitleOverlayDelegate.onNativeSubtitleSelected(trackID)
@@ -343,15 +319,6 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
                                 val mw = player.medialibrary.findMedia(service.currentMediaWrapper)
                                 if (mw != null && mw.id != 0L) mw.setStringMeta(MediaWrapper.META_SUBTITLE_TRACK, trackID)
                             }
-=======
-                        if (isVLC4() && trackID == "-1")
-                            service.unselectTrackType(trackType)
-                        else
-                            service.setSpuTrack(trackID)
-                        runIO {
-                            val mw = player.medialibrary.findMedia(service.currentMediaWrapper)
-                            if (mw != null && mw.id != 0L) mw.setStringMeta(MediaWrapper.META_SUBTITLE_TRACK, trackID)
->>>>>>> upstream/master
                         }
                     }
                 }
@@ -1040,11 +1007,7 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
             val format =  DateFormat.getTimeInstance(DateFormat.SHORT, Locale.getDefault())
             PlaybackService.playerSleepTime.value?.let {
                 hudRightBinding.sleepQuickAction.text = format.format(it.time)
-<<<<<<< HEAD
                 hudRightBinding.sleepQuickAction.contentDescription = player.getString(R.string.sleep_in) + TalkbackUtil.millisToString(player, System.currentTimeMillis() - it.time.time)
-=======
-                hudRightBinding.sleepQuickAction.contentDescription = player.getString(R.string.sleep_in).talkbackAppend(TalkbackUtil.millisToString(player, it.time.time - System.currentTimeMillis()))
->>>>>>> upstream/master
             }
             hudRightBinding.spuDelayQuickAction.text = "${(player.service?.spuDelay ?: 0L) / 1000L} ms"
             hudRightBinding.audioDelayQuickAction.text = "${(player.service?.audioDelay ?: 0L) / 1000L} ms"
@@ -1177,7 +1140,6 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
 
     }
 
-<<<<<<< HEAD
     /**
      * Open the file picker to select an external audio file that will be played alongside the
      * current video (same flow as [pickSubtitles], with audio files enabled).
@@ -1197,8 +1159,6 @@ class VideoPlayerOverlayDelegate (private val player: VideoPlayerActivity) {
         player.startActivityForResult(filePickerIntent, VideoPlayerActivity.PICK_AUDIO_FILE)
     }
 
-=======
->>>>>>> upstream/master
     private fun downloadSubtitles() = player.service?.currentMediaWrapper?.let {
         MediaUtils.getSubs(player, it)
     }

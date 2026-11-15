@@ -11,17 +11,11 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
 import org.videolan.BuildConfig
-<<<<<<< HEAD
 import org.videolan.libvlc.FactoryManager
 import org.videolan.libvlc.MediaPlayer
 import org.videolan.libvlc.RendererItem
 import org.videolan.libvlc.interfaces.IMedia
 import org.videolan.libvlc.interfaces.IMediaFactory
-=======
-import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.RendererItem
-import org.videolan.libvlc.interfaces.IMedia
->>>>>>> upstream/master
 import org.videolan.libvlc.interfaces.IMediaList
 import org.videolan.libvlc.interfaces.IVLCVout
 import org.videolan.medialibrary.interfaces.media.MediaWrapper
@@ -31,11 +25,8 @@ import org.videolan.tools.KEY_EQUALIZER_ENABLED
 import org.videolan.tools.*
 import org.videolan.vlc.*
 import org.videolan.vlc.gui.dialogs.VideoTracksDialog
-<<<<<<< HEAD
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayRuntime
 import org.videolan.vlc.subtitleoverlay.SubtitleOverlayPrefs
-=======
->>>>>>> upstream/master
 import org.videolan.vlc.gui.dialogs.adapters.VlcTrack
 import org.videolan.vlc.repository.EqualizerRepository
 import org.videolan.vlc.repository.SlaveRepository
@@ -50,7 +41,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     val progress by lazy(LazyThreadSafetyMode.NONE) { MutableLiveData<Progress>().apply { value = Progress() } }
     val speed by lazy(LazyThreadSafetyMode.NONE) { MutableLiveData<Float>().apply { value = 1.0F } }
     private val slaveRepository by lazy { SlaveRepository.getInstance(context) }
-<<<<<<< HEAD
     private val mediaFactory by lazy { FactoryManager.getFactory(IMediaFactory.factoryId) as IMediaFactory }
 
     /**
@@ -89,8 +79,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
             }
         }
     }
-=======
->>>>>>> upstream/master
 
     var mediaplayer = newMediaPlayer()
         private set
@@ -110,7 +98,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun play() {
         if (mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.play()
-<<<<<<< HEAD
         val companion = externalAudioPlayer
         if (companion != null && !companion.isReleased) {
             // The companion is left paused while the video is paused, so it may be behind (or ahead,
@@ -118,27 +105,19 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
             syncExternalAudio()
             companion.play()
         }
-=======
->>>>>>> upstream/master
     }
 
     fun pause(): Boolean {
         if (isPlaying() && mediaplayer.hasMedia() && pausable) {
             mediaplayer.pause()
-<<<<<<< HEAD
             externalAudioPlayer?.let { if (!it.isReleased) it.pause() }
-=======
->>>>>>> upstream/master
             return true
         }
         return false
     }
 
     fun stop() {
-<<<<<<< HEAD
         stopExternalAudio()
-=======
->>>>>>> upstream/master
         if (mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.stop()
         setPlaybackStopped()
     }
@@ -151,13 +130,9 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     private var mediaplayerEventListener: MediaPlayerEventListener? = null
     internal suspend fun startPlayback(media: IMedia, listener: MediaPlayerEventListener, time: Long) {
         mediaplayerEventListener = listener
-<<<<<<< HEAD
         withContext(Dispatchers.Main.immediate) {
             resetPlaybackState(time, media.duration)
         }
-=======
-        resetPlaybackState(time, media.duration)
->>>>>>> upstream/master
         mediaplayer.setEventListener(null)
         withContext(Dispatchers.IO) { if (!mediaplayer.isReleased) mediaplayer.media = media.apply { if (hasRenderer) parse() } }
         mediaplayer.setEventListener(this@PlayerController)
@@ -165,16 +140,10 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
             if (Settings.getInstance(context).getBoolean(KEY_EQUALIZER_ENABLED, false)) withContext(Dispatchers.IO) {
                 val repository = EqualizerRepository.getInstance(context)
                 mediaplayer.setEqualizer(repository.getCurrentEqualizer(context).getEqualizer())
-<<<<<<< HEAD
-=======
-            } else {
-                mediaplayer.setEqualizer(null)
->>>>>>> upstream/master
             }
             mediaplayer.setVideoTitleDisplay(MediaPlayer.Position.Disable, 0)
             mediaplayer.play()
         }
-<<<<<<< HEAD
         val externalAudio = pendingExternalAudioUri
         // The media was just started: the companion must play, whatever the (not yet updated)
         // playback state says
@@ -183,11 +152,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     private fun resetPlaybackState(time: Long, duration: Long) {
         // safe to call updateProgress since the calling coroutine will be on the main dispatcher when used
-=======
-    }
-
-    private fun resetPlaybackState(time: Long, duration: Long) {
->>>>>>> upstream/master
         seekable = true
         pausable = true
         lastTime = time
@@ -198,7 +162,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     fun restart() {
         val mp = mediaplayer
         val volume:Int? = if (!mp.isReleased) mp.volume else null
-<<<<<<< HEAD
         // The companion player of the external audio was created on the libvlc instance of the
         // player that is released here: it is stopped, the next playback starts it again from
         // [pendingExternalAudioUri]
@@ -206,8 +169,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         // Silence the old player: it is released on a background thread and would otherwise keep
         // playing, and rendering, on its own until it is freed
         if (!mp.isReleased && mp.hasMedia()) mp.stop()
-=======
->>>>>>> upstream/master
         mediaplayer = newMediaPlayer()
         volume?.let {
             if (it > 100) {
@@ -219,18 +180,12 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun setPosition(position: Float) {
         if (seekable && mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.position = position
-<<<<<<< HEAD
         externalAudioPlayer?.let { if (!it.isReleased) it.position = position }
-=======
->>>>>>> upstream/master
     }
 
     fun setTime(time: Long, fast:Boolean = false) {
         if (seekable && mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.setTime(time, fast)
-<<<<<<< HEAD
         externalAudioPlayer?.let { if (!it.isReleased) it.setTime(time, fast) }
-=======
->>>>>>> upstream/master
     }
 
     fun isPlaying() = playbackState == PlaybackStateCompat.STATE_PLAYING
@@ -249,7 +204,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun getCurrentVideoTrack(): VlcTrack? = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSelectedVideoTrack() else null
 
-<<<<<<< HEAD
     fun getAudioTracksCount(): Int {
         var count = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getAudioTracksCount() else 0
         if (externalAudioPlayer !== null) count++
@@ -281,17 +235,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         if (index == EXTERNAL_AUDIO_TRACK_ID) return externalAudioPlayer !== null
         return !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setAudioTrack(index)
     }
-=======
-    fun getAudioTracksCount() = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getAudioTracksCount() else 0
-
-    fun getAudioTracks(): Array<out VlcTrack>? = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getAllAudioTracks() else emptyArray()
-
-    fun getAudioTrack():String = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSelectedAudioTrack()?.getId() ?: "-1" else "-1"
-
-    fun setVideoTrack(index: String) = !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setVideoTrack(index)
-
-    fun setAudioTrack(index: String) = !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setAudioTrack(index)
->>>>>>> upstream/master
 
     fun unselectTrackType(trackType: VideoTracksDialog.TrackType) {
         val vlcTrackType = when(trackType) {
@@ -304,15 +247,11 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun setAudioDigitalOutputEnabled(enabled: Boolean) = !mediaplayer.isReleased && mediaplayer.setAudioDigitalOutputEnabled(enabled)
 
-<<<<<<< HEAD
     fun getAudioDelay(): Long {
         val companion = externalAudioPlayer
         if (companion != null && !companion.isReleased) return externalAudioDelay
         return if (mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.audioDelay else 0L
     }
-=======
-    fun getAudioDelay() = if (mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.audioDelay else 0L
->>>>>>> upstream/master
 
     fun getSpuDelay() = if (mediaplayer.hasMedia() && !mediaplayer.isReleased) mediaplayer.spuDelay else 0L
 
@@ -328,7 +267,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 
     fun getSpuTracks(): Array<out VlcTrack>? = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getAllSpuTracks() else emptyArray()
 
-<<<<<<< HEAD
     /**
      * Selected subtitle track. The overlay's own entry is reported while the overlay draws an
      * external file (VLC knows nothing about that file, it is never attached as a slave); when the
@@ -360,15 +298,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         val appliedToMain = mediaplayer.hasMedia() && !mediaplayer.isReleased && mediaplayer.setAudioDelay(delay)
         return appliedToCompanion || appliedToMain
     }
-=======
-    fun getSpuTrack() = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSelectedSpuTrack()?.getId() ?: "-1" else "-1"
-
-    fun setSpuTrack(index: String) = !mediaplayer.isReleased && mediaplayer.hasMedia() && mediaplayer.setSpuTrack(index)
-
-    fun getSpuTracksCount() = if (!mediaplayer.isReleased && mediaplayer.hasMedia()) mediaplayer.getSpuTracksCount() else 0
-
-    fun setAudioDelay(delay: Long) = mediaplayer.setAudioDelay(delay)
->>>>>>> upstream/master
 
     fun setEqualizer(equalizer: MediaPlayer.Equalizer?) = mediaplayer.setEqualizer(equalizer)
 
@@ -387,10 +316,7 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     }
 
     fun release(player: MediaPlayer = mediaplayer) {
-<<<<<<< HEAD
         stopExternalAudio()
-=======
->>>>>>> upstream/master
         player.setEventListener(null)
         if (isVideoPlaying()) player.vlcVout.detachViews()
         releaseMedia()
@@ -406,7 +332,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         setPlaybackStopped()
     }
 
-<<<<<<< HEAD
     /**
      * Attaches the slaves of [mw] (medialibrary ones + the ones persisted in the database) to
      * [media]. This MUST happen before playback starts (i.e. before the media is set on the
@@ -536,17 +461,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         companion.setEventListener(null)
         companion.stop()
         launch(Dispatchers.IO) { if (!companion.isReleased) companion.release() }
-=======
-    fun setSlaves(media: IMedia, mw: MediaWrapper) = launch {
-        if (mediaplayer.isReleased) return@launch
-        val slaves = mw.slaves
-        slaves?.let { it.forEach { slave -> media.addSlave(slave) } }
-        media.release()
-        slaveRepository.getSlaves(mw.location).forEach { slave ->
-            if (!slaves.contains(slave)) mediaplayer.addSlave(slave.type, slave.uri.toUri(), false)
-        }
-        slaves?.let { slaveRepository.saveSlaves(mw) }
->>>>>>> upstream/master
     }
 
     private fun newMediaPlayer() : MediaPlayer {
@@ -571,10 +485,7 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     fun setRate(rate: Float, save: Boolean) {
         if (mediaplayer.isReleased) return
         mediaplayer.rate = rate
-<<<<<<< HEAD
         externalAudioPlayer?.let { if (!it.isReleased) it.rate = rate }
-=======
->>>>>>> upstream/master
         speed.postValue(rate)
     }
 
@@ -627,7 +538,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         if (!mediaplayer.isReleased)  mediaplayer.title = title
     }
 
-<<<<<<< HEAD
     fun getVolume() = when {
         externalAudioPlayer !== null -> externalAudioVolume ?: 100
         !mediaplayer.isReleased -> mediaplayer.volume
@@ -642,11 +552,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
         if (!mediaplayer.isReleased) mediaplayer.setVolume(if (companion !== null) 0 else volume)
         return volume
     }
-=======
-    fun getVolume() = if (!mediaplayer.isReleased) mediaplayer.volume else 100
-
-    fun setVolume(volume: Int) = if (!mediaplayer.isReleased) mediaplayer.setVolume(volume) else -1
->>>>>>> upstream/master
 
     suspend fun expand(): IMediaList? {
         return mediaplayer.media?.let {
@@ -666,16 +571,12 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
     private val eventActor = actor<MediaPlayer.Event>(capacity = Channel.UNLIMITED, start = CoroutineStart.UNDISPATCHED) {
         for (event in channel) {
             when (event.type) {
-<<<<<<< HEAD
                 MediaPlayer.Event.Playing -> {
                     playbackState = PlaybackStateCompat.STATE_PLAYING
                     // The external audio must follow the video whenever it (re)starts playing, e.g.
                     // after a pause or a seek at open, so realign the companion on the new position
                     syncExternalAudio()
                 }
-=======
-                MediaPlayer.Event.Playing -> playbackState = PlaybackStateCompat.STATE_PLAYING
->>>>>>> upstream/master
                 MediaPlayer.Event.Paused -> playbackState = PlaybackStateCompat.STATE_PAUSED
                 MediaPlayer.Event.EncounteredError -> setPlaybackStopped()
                 MediaPlayer.Event.PausableChanged -> pausable = event.pausable
@@ -727,7 +628,6 @@ class PlayerController(val context: Context) : IVLCVout.Callback, MediaPlayer.Ev
 const val NO_LENGTH_PROGRESS_MAX = 1000
 class Progress(var time: Long = 0L, var length: Long = 0L)
 
-<<<<<<< HEAD
 /**
  * Drift, in milliseconds, tolerated between the external audio and the video before the companion
  * player is realigned on the main player. Realigning costs a short audio flush.
@@ -787,8 +687,6 @@ class OverlaySubtitleTrack(private val label: String) : VlcTrack {
     override fun getFrameRateNum() = 0
 }
 
-=======
->>>>>>> upstream/master
 internal interface MediaPlayerEventListener {
     suspend fun onEvent(event: MediaPlayer.Event)
 }

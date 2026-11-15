@@ -89,10 +89,7 @@ import org.videolan.vlc.PlaybackService
 import org.videolan.vlc.R
 import org.videolan.vlc.gui.browser.BaseBrowserFragment
 import org.videolan.vlc.gui.video.VideoPlayerActivity
-<<<<<<< HEAD
 import org.videolan.vlc.repository.SlaveRepository
-=======
->>>>>>> upstream/master
 import org.videolan.vlc.util.FileUtils
 import org.videolan.vlc.util.FontCache
 import org.videolan.vlc.util.awaitMedialibraryStarted
@@ -160,15 +157,12 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
     private var preBrowserVolume = -1
     private var parsed = false
     var savedTime = 0L
-<<<<<<< HEAD
 
     /**
      * Start time, in milliseconds, that [restart] wants the media it reloads to resume at, or -1.
      * Consumed by [getStartTime], so a reloaded playback resumes exactly where it was interrupted.
      */
     private var reloadStartTime = -1L
-=======
->>>>>>> upstream/master
     private var random = SecureRandom()
     private var newMedia = false
     @Volatile
@@ -183,10 +177,7 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
     private var lastPrevious = -1L
 
     private val mediaFactory = FactoryManager.getFactory(IMediaFactory.factoryId) as IMediaFactory
-<<<<<<< HEAD
     private val slaveRepository by lazy(LazyThreadSafetyMode.NONE) { SlaveRepository.getInstance(service) }
-=======
->>>>>>> upstream/master
     lateinit var videoResumeStatus: ResumeStatus
     lateinit var audioResumeStatus: ResumeStatus
 
@@ -260,11 +251,7 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
     }
 
     @MainThread
-<<<<<<< HEAD
     suspend fun load(list: List<MediaWrapper>, position: Int, mlUpdate: Boolean = false, avoidErasingStop:Boolean = false, forceResume: Boolean = false) {
-=======
-    suspend fun load(list: List<MediaWrapper>, position: Int, mlUpdate: Boolean = false, avoidErasingStop:Boolean = false) {
->>>>>>> upstream/master
         saveMediaList()
         savePosition()
         mediaList.removeEventListener(this@PlaylistManager)
@@ -295,11 +282,7 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
         if (stopAfter < position) stopAfter = -1
         clearABRepeat()
         player.setRate(1.0f, false)
-<<<<<<< HEAD
         playIndex(currentIndex, forceResume = forceResume)
-=======
-        playIndex(currentIndex)
->>>>>>> upstream/master
         service.onPlaylistLoaded()
         if (mlUpdate) {
             service.awaitMedialibraryStarted()
@@ -409,7 +392,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
         launch { playIndex(currentIndex) }
     }
 
-<<<<<<< HEAD
     /**
      * Rebuilds the current playback on the player's libvlc instance.
      *
@@ -473,12 +455,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
                 if (wasPaused) mw.removeFlags(MediaWrapper.MEDIA_PAUSED)
             }
         }
-=======
-    fun restart() {
-        val isPlaying = player.isPlaying() && isAudioList()
-        stop()
-        if (isPlaying) PlaybackService.loadLastAudio(service)
->>>>>>> upstream/master
     }
 
     fun stop(systemExit: Boolean = false, video: Boolean = false) {
@@ -672,16 +648,11 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
                 }
             }
             media.setEventListener(this@PlaylistManager)
-<<<<<<< HEAD
             // Slaves (external audio/subtitles) must be attached to the media BEFORE playback
             // starts, otherwise audio slaves don't follow seeks
             player.setSlaves(media, mw)
             player.startPlayback(media, mediaplayerEventListener, start)
             media.release()
-=======
-            player.startPlayback(media, mediaplayerEventListener, start)
-            player.setSlaves(media, mw)
->>>>>>> upstream/master
             if (browserAudioActive) player.setVolume(0)
             newMedia = true
             determinePrevAndNextIndices()
@@ -697,7 +668,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
         else stop()
     }
 
-<<<<<<< HEAD
     /**
      * Adds an external audio file to the currently playing media.
      *
@@ -712,8 +682,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
         player.startExternalAudio(uri)
     }
 
-=======
->>>>>>> upstream/master
     fun onServiceDestroyed() {
         player.release()
     }
@@ -1136,7 +1104,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
     fun getMedia(position: Int) = mediaList.getMedia(position)
 
     private fun getStartTime(mw: MediaWrapper) : Long {
-<<<<<<< HEAD
         // A playback rebuilt by [restart] resumes where it was interrupted
         if (reloadStartTime >= 0L) {
             val start = reloadStartTime
@@ -1144,8 +1111,6 @@ class PlaylistManager(val service: PlaybackService) : MediaWrapperList.EventList
             savedTime = 0L
             return start
         }
-=======
->>>>>>> upstream/master
         val start = when {
             mw.hasFlag(MediaWrapper.MEDIA_FROM_START) -> {
                 mw.removeFlags(MediaWrapper.MEDIA_FROM_START)
