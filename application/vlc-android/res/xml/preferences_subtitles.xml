@@ -32,7 +32,7 @@
             android:persistent="true"
             android:title="@string/subtitle_preferred_language" />
 
-    <PreferenceCategory android:title="@string/subtitle_overlay_category">
+<<    <PreferenceCategory android:title="@string/subtitle_overlay_category">
         <CheckBoxPreference
                 android:defaultValue="false"
                 android:key="subtitle_overlay_enabled"
@@ -52,7 +52,6 @@
                 app:showSeekBarValue="true"
                 app:updatesContinuously="true" />
     </PreferenceCategory>
-
     <PreferenceCategory android:title="@string/subtitles_font_style">
         <ListPreference
                 android:defaultValue="16"

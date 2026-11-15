@@ -972,5 +972,4 @@
 
     <!-- No-op in the light theme: defined here so the resource always resolves. -->
     <style name="ThemeOverlay.VLC.Amoled" parent="" />
-
 </resources>

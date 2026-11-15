@@ -27,16 +27,20 @@ package org.videolan.vlc.util
 import android.content.SharedPreferences
 import androidx.appcompat.app.AppCompatActivity
 import org.videolan.tools.KEY_LAST_WHATS_NEW
+import org.videolan.tools.KEY_SHOW_WHATS_NEW
 import org.videolan.tools.Settings
 import org.videolan.tools.putSingle
+import org.videolan.vlc.gui.dialogs.WhatsNewDialog
 
 object WhatsNewManager {
     fun launchIfNeeded(context: AppCompatActivity) {
         val preferences = Settings.getInstance(context)
-        // The "What's new" dialog is permanently disabled in this build: it popped up over
-        // the app on start and the user removed it. markAsShown still keeps the stored
-        // version current in case this is ever re-enabled.
-        markAsShown(preferences)
+        val needed = preferences.getBoolean(KEY_SHOW_WHATS_NEW, true) && preferences.getString(KEY_LAST_WHATS_NEW, "") != "3.7"
+        if (needed) {
+            markAsShown(preferences)
+            val whatsNewDialog = WhatsNewDialog()
+            whatsNewDialog.show(context.supportFragmentManager, "fragment_whats_new")
+        }
     }
 
     fun markAsShown(preferences: SharedPreferences) {

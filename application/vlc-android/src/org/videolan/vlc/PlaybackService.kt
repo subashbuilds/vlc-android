@@ -1529,7 +1529,6 @@ class PlaybackService : MediaBrowserServiceCompat(), LifecycleOwner, CoroutineSc
     internal fun notifyPlayerRebuilt() {
         for (callback in callbacks) callback.onPlayerRebuilt()
     }
-
     fun saveMediaMeta() = playlistManager.saveMediaMeta()
 
     fun isValidIndex(positionInPlaylist: Int) = playlistManager.isValidPosition(positionInPlaylist)
@@ -1905,7 +1904,6 @@ class PlaybackService : MediaBrowserServiceCompat(), LifecycleOwner, CoroutineSc
      */
     @MainThread
     fun stopExternalAudio() = playlistManager.player.stopExternalAudio()
-
     @MainThread
     fun setSpuTrack(index: String) = playlistManager.setSpuTrack(index)
 
