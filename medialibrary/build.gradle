@@ -32,8 +32,8 @@ android {
 
     defaultConfig {
         ndkVersion = rootProject.ext.toolchainNdkVersion
-        if (rootProject.ext.tooclchainNdkPath != null)
-            ndkPath = rootProject.ext.tooclchainNdkPath
+        if (rootProject.ext.toolchainNdkPath != null)
+            ndkPath = rootProject.ext.toolchainNdkPath
     }
 
     sourceSets {

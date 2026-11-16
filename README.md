@@ -2,7 +2,7 @@
 
 <img src="logo.png" alt="VLC for Android (fork) logo" width="128" height="128">
 
-# VLC for Android — Custom Fork
+# VLC for Android - Custom Fork
 
 **The official VLC for Android, plus an AMOLED theme, selectable interface colours,
 seek-safe external audio and a screen-anchored subtitle overlay.**
