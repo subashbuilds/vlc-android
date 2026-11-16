@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: instabox-medium
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
       ABI: ${{ inputs.abi }}
